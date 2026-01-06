@@ -1,8 +1,5 @@
-/* ============================================================
-   variables.css — Design tokens (colors, spacing, radius, etc.)
-   ============================================================ */
 :root {
-  /* Brand palette */
+
   --bg:            #0F172A;
   --bg-2:          #0B1120;
   --card:          rgba(255, 255, 255, 0.08);
@@ -13,52 +10,52 @@
   --danger:        #EF4444;
   --warning:       #F59E0B;
 
-  /* Text */
+
   --text:          #F8FAFC;
   --text-muted:    #94A3B8;
   --text-dim:      #64748B;
 
-  /* Surfaces & borders */
+
   --border:        rgba(255, 255, 255, 0.10);
   --border-strong: rgba(255, 255, 255, 0.18);
   --glass-blur:    18px;
 
-  /* Gradients */
+
   --grad-primary:  linear-gradient(135deg, #3B82F6 0%, #8B5CF6 100%);
   --grad-accent:   linear-gradient(135deg, #22C55E 0%, #3B82F6 100%);
   --grad-danger:   linear-gradient(135deg, #EF4444 0%, #F59E0B 100%);
   --grad-glow:     radial-gradient(circle at 30% 20%, rgba(59,130,246,0.25), transparent 60%),
                    radial-gradient(circle at 80% 60%, rgba(139,92,246,0.20), transparent 55%);
 
-  /* Shadows */
+
   --shadow-sm:     0 2px 8px rgba(0, 0, 0, 0.25);
   --shadow-md:     0 8px 24px rgba(0, 0, 0, 0.30);
   --shadow-lg:     0 20px 50px rgba(0, 0, 0, 0.45);
   --shadow-glow:   0 0 24px rgba(59, 130, 246, 0.35);
 
-  /* Radius */
+
   --r-sm: 8px;
   --r-md: 14px;
   --r-lg: 20px;
   --r-xl: 28px;
   --r-pill: 999px;
 
-  /* Spacing scale */
+
   --s-1: 4px;  --s-2: 8px;  --s-3: 12px; --s-4: 16px;
   --s-5: 20px; --s-6: 24px; --s-8: 32px; --s-10: 40px; --s-12: 48px;
 
-  /* Layout */
+
   --sidebar-w: 268px;
   --topbar-h: 72px;
 
-  /* Motion */
+
   --ease: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --dur-fast: 0.15s;
   --dur: 0.28s;
   --dur-slow: 0.5s;
 
-  /* Typography */
+
   --font: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Consolas', monospace;
 }
