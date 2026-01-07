@@ -1,0 +1,23 @@
+html[data-theme="light"] {
+  --bg:            #F1F5F9;
+  --bg-2:          #E2E8F0;
+  --card:          rgba(255, 255, 255, 0.72);
+  --card-solid:    #FFFFFF;
+  --text:          #0F172A;
+  --text-muted:    #475569;
+  --text-dim:      #94A3B8;
+  --border:        rgba(15, 23, 42, 0.10);
+  --border-strong: rgba(15, 23, 42, 0.18);
+  --shadow-sm:     0 2px 8px rgba(15, 23, 42, 0.08);
+  --shadow-md:     0 8px 24px rgba(15, 23, 42, 0.10);
+  --shadow-lg:     0 20px 50px rgba(15, 23, 42, 0.16);
+  --grad-glow:     radial-gradient(circle at 30% 20%, rgba(59,130,246,0.12), transparent 60%),
+                   radial-gradient(circle at 80% 60%, rgba(139,92,246,0.10), transparent 55%);
+}
+html[data-theme="light"] .sidebar { background: rgba(255,255,255,0.75); }
+html[data-theme="light"] .topbar { background: rgba(255,255,255,0.65); }
+html[data-theme="light"] .storage-bar,
+html[data-theme="light"] .progress { background: rgba(15,23,42,0.08); }
+html[data-theme="light"] .log-console { background: #0f172a; }
+html[data-theme="light"] ::-webkit-scrollbar-thumb { background: rgba(15,23,42,0.18); background-clip: padding-box; }
+html[data-theme="light"] table.data thead th { background: rgba(15,23,42,0.03); }
