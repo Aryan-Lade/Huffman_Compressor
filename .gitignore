@@ -1,8 +1,5 @@
 temp.py
 
-backend/target/
-*.class
-
 reports/*
 compressed/*
 temp/*

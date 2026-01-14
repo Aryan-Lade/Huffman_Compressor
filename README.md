@@ -9,8 +9,6 @@
   <img alt="HTML5" src="https://img.shields.io/badge/HTML5-E34F26?logo=html5&logoColor=white" />
   <img alt="CSS3" src="https://img.shields.io/badge/CSS3-1572B6?logo=css3&logoColor=white" />
   <img alt="JavaScript" src="https://img.shields.io/badge/JavaScript-F7DF1E?logo=javascript&logoColor=black" />
-  <img alt="Java" src="https://img.shields.io/badge/Java-17-007396?logo=openjdk&logoColor=white" />
-  <img alt="Spring Boot" src="https://img.shields.io/badge/Spring%20Boot-3.2-6DB33F?logo=springboot&logoColor=white" />
   <img alt="License" src="https://img.shields.io/badge/License-MIT-22C55E" />
 </p>
 
@@ -18,7 +16,7 @@
 
 ## Overview
 
-HuffZip is a WinRAR / 7-Zip inspired compression tool with a **premium, glassmorphic UI**. The frontend is pure **HTML5 + CSS3 + Vanilla JavaScript** and works completely on its own (with a built-in JavaScript Huffman engine + demo workspace). An optional **Java / Spring Boot** backend provides a real Huffman coding engine, AES encryption and checksum verification over a clean REST API.
+HuffZip is a WinRAR / 7-Zip inspired compression tool with a **premium, glassmorphic UI**. It is built entirely with **HTML5 + CSS3 + Vanilla JavaScript** — no server, no build step, no database. A built-in JavaScript Huffman engine powers the live compression estimates, and everything you do is saved locally in your browser.
 
 ## Features
 
@@ -47,50 +45,25 @@ HuffZip is a WinRAR / 7-Zip inspired compression tool with a **premium, glassmor
 
 **Frontend:** HTML5, CSS3 (modular: variables, base, layout, components, buttons, cards, animations, utilities, responsive, themes), Vanilla JavaScript, Bootstrap Icons.
 
-**Backend:** Java 17, Spring Boot 3.2 (Spring Web), Huffman coding, `javax.crypto` (AES-CBC + PBKDF2), File Handling.
+**Engine:** A Huffman coding implementation written in plain JavaScript (`js/huffman.js`).
 
-**Storage:** Browser `localStorage` (no database required).
+**Storage:** Browser `localStorage` (no server, no database required).
 
 ## Getting Started
 
-### Frontend only (fastest)
+There is **no build step and no server** — just open the site in a browser.
 
-The frontend runs standalone — no backend needed.
+**Option 1 — open directly:** double-click `frontend/index.html`.
+
+**Option 2 — run a tiny local server** (recommended, avoids browser file restrictions):
 
 ```bash
 cd frontend
-# open index.html directly, or serve it:
 python -m http.server 5500
 # then visit http://localhost:5500
 ```
 
-### With the Java backend
-
-Requires **JDK 17+** and **Maven**.
-
-```bash
-cd backend
-mvn spring-boot:run
-# API + UI served at http://localhost:8080
-```
-
-To serve the UI through Spring Boot, copy the frontend into the backend's static folder:
-
-```bash
-cp -r frontend/* backend/src/main/resources/static/
-```
-
-The frontend automatically detects the backend via `GET /api/health` and shows a "Backend connected" toast when it is online. If the backend is offline it falls back to the built-in JavaScript Huffman engine, so the app always works.
-
-### API Endpoints
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET`  | `/api/health` | Engine status check |
-| `POST` | `/api/analyze` | Analyze a file (ratio, symbols, entropy) |
-| `POST` | `/api/compress` | Compress and return statistics |
-| `POST` | `/api/compress/download` | Compress and download the `.huff` archive |
-| `POST` | `/api/extract/download` | Decompress and download the original file |
+That's it. Everything (compress, extract, reports, history, settings) works entirely in the browser and your data is saved locally.
 
 ## Folder Structure
 
@@ -103,17 +76,6 @@ Huffman_Compressor/
 │   ├── js/             utils, store, huffman, api, components, views, app
 │   ├── assets/
 │   └── icons/
-├── backend/
-│   ├── pom.xml
-│   └── src/main/
-│       ├── java/com/huffzip/
-│       │   ├── HuffZipApplication.java
-│       │   ├── controller/     CompressionController
-│       │   ├── service/        CompressionService
-│       │   ├── model/          HuffmanNode, CompressionResult
-│       │   ├── util/           HuffmanCoder, CryptoUtil
-│       │   └── config/         WebConfig
-│       └── resources/          application.properties
 ├── reports/       generated compression reports
 ├── compressed/    output archives
 ├── temp/          temporary working files
@@ -125,8 +87,8 @@ Huffman_Compressor/
 1. Count the frequency of every byte in the file.
 2. Build a **min-priority queue** of leaf nodes and merge the two smallest repeatedly into a binary **Huffman tree**.
 3. Walk the tree to assign a short **prefix-free code** to each byte (frequent bytes get shorter codes).
-4. Write a small header (magic number, length, frequency table) and pack the encoded bits into bytes.
-5. Decompression rebuilds the identical tree from the header and walks it bit-by-bit to restore the original bytes. A **checksum** confirms integrity.
+4. Shorter codes for frequent bytes mean fewer total bits, which is where the space saving comes from.
+5. A **checksum** is generated so archive integrity can be confirmed.
 
 ## Future Improvements
 

@@ -1,17 +1,4 @@
 const API = (() => {
-  const BASE = 'http://localhost:8080/api';
-  let online = false;
-
-  async function ping() {
-    try {
-      const res = await fetch(`${BASE}/health`, { method: 'GET', signal: AbortSignal.timeout(1200) });
-      online = res.ok;
-    } catch {
-      online = false;
-    }
-    return online;
-  }
-
   async function readFileBytes(file, cap = 3_000_000) {
     const slice = file.slice(0, cap);
     const buf = await slice.arrayBuffer();
@@ -65,5 +52,5 @@ const API = (() => {
     };
   }
 
-  return { ping, compress, analyzeLocal, isOnline: () => online, BASE };
+  return { compress, analyzeLocal };
 })();

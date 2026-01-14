@@ -16,7 +16,6 @@ const App = (() => {
     bindKeyboard();
     renderNotifications();
     updateSidebarStorage();
-    API.ping().then((ok) => { if (ok) UI.toast({ type: 'success', title: 'Backend connected', message: 'Java compression engine online' }); });
     navigate('dashboard');
     Store.subscribe(() => { updateSidebarStorage(); renderNotifications(); });
   }
