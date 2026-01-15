@@ -10,65 +10,110 @@ const Views = (() => {
     const st = s.stats;
     const saved = st.totalOriginalBytes - st.totalCompressedBytes;
     const avgRatio = st.totalOriginalBytes ? Math.round((saved / st.totalOriginalBytes) * 100) : 0;
-    const recent = s.archives.slice(0, 5);
+    const successRate = st.totalCompressed ? Math.round((s.archives.filter((a) => a.status === 'success').length / st.totalCompressed) * 100) : 100;
+    const recent = s.archives.slice(0, 6);
 
-    const chartData = [58, 42, 71, 35, 64, 48, 82];
-    const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const bars = chartData.map((h, i) => `
-      <div class="chart-bar">
-        <div class="bar ${i % 2 ? 'alt' : ''}" style="height:${h}%;animation-delay:${i * 0.07}s"></div>
-        <small>${days[i]}</small>
-      </div>`).join('');
+    const activity = buildActivity();
+    const activityRows = activity.length ? activity.map(activityRow).join('') : emptyInline('No activity yet', 'Your recent actions will show up here.');
 
-    const recentRows = recent.length ? recent.map((a) => fileRow(a)).join('') : emptyInline('No archives yet', 'Compress your first file to see it here.');
+    const tableRows = recent.length ? recent.map((a) => `
+      <tr data-archive="${a.id}">
+        <td><div class="t-file"><i class="bi ${iconForExt(a.ext)}"></i>${escapeHtml(a.name)}</div></td>
+        <td class="mono">${formatBytes(a.originalSize)}</td>
+        <td class="mono">${formatBytes(a.compressedSize)}</td>
+        <td><span class="badge success">${Math.round(a.ratio * 100)}%</span></td>
+        <td>${timeAgo(a.createdAt)}</td>
+        <td><span class="badge ${a.status === 'success' ? 'success' : 'danger'}"><span class="b-dot"></span>${a.status}</span></td>
+        <td>
+          <button class="icon-btn" style="width:30px;height:30px" data-action="download" data-id="${a.id}" data-tooltip="Download"><i class="bi bi-download"></i></button>
+          <button class="icon-btn" style="width:30px;height:30px" data-action="menu" data-id="${a.id}" data-tooltip="More"><i class="bi bi-three-dots"></i></button>
+        </td>
+      </tr>`).join('') : '';
 
     return `
       ${sectionHead('Dashboard', 'Welcome back, Aryan. Here is your compression overview.',
-        `<button class="btn btn-ghost" data-nav="reports"><i class="bi bi-download"></i>Export</button>
+        `<button class="btn btn-ghost" data-nav="reports"><i class="bi bi-download"></i>Open Reports</button>
          <button class="btn btn-primary btn-glow" data-nav="compress"><i class="bi bi-plus-lg"></i>New Compression</button>`)}
 
       <div class="stat-grid stagger">
-        ${statCard('bi-archive-fill', '', 'Total Archives', st.totalCompressed, `<span class="stat-trend up"><i class="bi bi-arrow-up-right"></i> Active</span>`)}
-        ${statCard('bi-hdd-network-fill', 'green', 'Space Saved', formatBytes(saved), `<span class="stat-trend up"><i class="bi bi-graph-up-arrow"></i> ${avgRatio}% avg</span>`)}
-        ${statCard('bi-files', 'purple', 'Files Processed', st.filesProcessed, `<span class="stat-trend up"><i class="bi bi-check2-all"></i> All done</span>`)}
-        ${statCard('bi-speedometer2', 'orange', 'Avg Ratio', avgRatio + '%', `<span class="stat-trend up"><i class="bi bi-lightning-charge"></i> Optimized</span>`)}
+        ${statCard('bi-archive-fill', '', 'Total Files Compressed', st.totalCompressed, `<span class="stat-trend up"><i class="bi bi-arrow-up-right"></i> Active</span>`)}
+        ${statCard('bi-hdd-network-fill', 'green', 'Total Space Saved', formatBytes(saved), `<span class="stat-trend up"><i class="bi bi-graph-up-arrow"></i> ${avgRatio}% average</span>`)}
+        ${statCard('bi-speedometer2', 'purple', 'Compression Ratio', avgRatio + '%', `<span class="stat-trend up"><i class="bi bi-lightning-charge"></i> Optimized</span>`)}
+        ${statCard('bi-check2-circle', 'orange', 'Success Rate', successRate + '%', `<span class="stat-trend up"><i class="bi bi-shield-check"></i> Reliable</span>`)}
       </div>
 
       <div class="dash-grid">
         <div class="card-stack">
           <div class="glass-card hover-lift">
             <div class="section-head" style="margin-bottom:16px">
-              <div class="st"><h3>Quick Actions</h3></div>
+              <div class="st"><h3>Quick Actions</h3><p>Jump straight into a task</p></div>
             </div>
             <div class="quick-actions">
-              ${quickAction('bi-file-earmark-zip-fill', 'Compress', 'Shrink files', 'compress')}
-              ${quickAction('bi-box-arrow-up', 'Extract', 'Unpack archive', 'extract')}
-              ${quickAction('bi-folder-fill', 'Folder', 'Batch compress', 'compress')}
-              ${quickAction('bi-shield-lock-fill', 'Encrypt', 'Protect files', 'compress')}
+              ${quickAction('bi-file-earmark-zip-fill', 'Compress File', 'Shrink any file', 'compress')}
+              ${quickAction('bi-box-arrow-up', 'Extract Archive', 'Unpack files', 'extract')}
+              ${quickAction('bi-folder-plus', 'Create ZIP', 'Bundle files', 'compress')}
+              ${quickAction('bi-file-earmark-bar-graph-fill', 'Open Reports', 'View reports', 'reports')}
             </div>
           </div>
 
           <div class="glass-card hover-lift">
             <div class="section-head" style="margin-bottom:8px">
-              <div class="st"><h3>Recent Files</h3></div>
+              <div class="st"><h3>Recent Files</h3><p>Latest archives you created</p></div>
               <button class="btn btn-sm btn-ghost" data-nav="history">View all</button>
             </div>
-            <div class="list-clean">${recentRows}</div>
+            ${tableRows ? `<div class="table-wrap"><table class="data" id="dashTable">
+              <thead><tr><th>File</th><th>Original</th><th>Compressed</th><th>Ratio</th><th>When</th><th>Status</th><th></th></tr></thead>
+              <tbody>${tableRows}</tbody></table></div>`
+              : emptyInline('No files yet', 'Compress your first file to see it here.')}
           </div>
         </div>
 
         <div class="card-stack">
-          <div class="glass-card hover-lift">
-            <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>Performance</h3></div><span class="badge info"><span class="b-dot"></span>7 days</span></div>
-            <div class="chart-wrap">${bars}</div>
-          </div>
           <div class="glass-card hover-lift text-center">
             <h3 class="mb-4">Compression Ratio</h3>
             ${ratioRing(avgRatio)}
             <div class="mt-4 text-muted fs-sm">Average across all archives</div>
           </div>
+          <div class="glass-card hover-lift">
+            <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>Recent Activity</h3></div><span class="badge info"><span class="b-dot"></span>Live</span></div>
+            <div class="activity-feed">${activityRows}</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="status-bar">
+        <div class="sb-group">
+          <span class="sb-item"><span class="sb-dot ok"></span>Engine ready</span>
+          <span class="sb-item"><i class="bi bi-cpu"></i>Huffman</span>
+          <span class="sb-item"><i class="bi bi-hdd"></i>${st.totalCompressed} archives</span>
+        </div>
+        <div class="sb-group">
+          <span class="sb-item"><i class="bi bi-graph-up-arrow"></i>${formatBytes(saved)} saved</span>
+          <span class="sb-item"><i class="bi bi-clock"></i>${formatTime(Date.now())}</span>
+          <span class="sb-item">HuffZip v1.0.0</span>
         </div>
       </div>`;
+  }
+
+  function buildActivity() {
+    const s = Store.get();
+    const items = [];
+    s.archives.slice(0, 4).forEach((a) => items.push({
+      icon: a.encrypted ? 'bi-shield-lock-fill' : 'bi-file-earmark-zip-fill',
+      tone: 'info', title: `Compressed ${a.name}`, sub: `${Math.round(a.ratio * 100)}% saved`, at: a.createdAt,
+    }));
+    s.extractions.slice(0, 2).forEach((x) => items.push({
+      icon: 'bi-box-arrow-up', tone: 'green', title: `Extracted ${x.name}`, sub: `${formatBytes(x.size)} restored`, at: x.createdAt,
+    }));
+    return items.sort((a, b) => b.at - a.at).slice(0, 6);
+  }
+
+  function activityRow(item) {
+    return `<div class="activity-item">
+      <div class="ai-ico ${item.tone}"><i class="bi ${item.icon}"></i></div>
+      <div class="ai-body"><div class="ai-title">${escapeHtml(item.title)}</div><div class="ai-sub">${escapeHtml(item.sub)}</div></div>
+      <div class="ai-time">${timeAgo(item.at)}</div>
+    </div>`;
   }
 
   function statCard(icon, tone, label, value, trend = '') {
