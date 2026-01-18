@@ -2,6 +2,14 @@ const App = (() => {
   let currentView = 'dashboard';
   let selectedFiles = [];
   let extractFile = null;
+  let cancelRequested = false;
+  let isCompressing = false;
+
+  const levelHints = {
+    fast: 'Fastest speed, lighter savings.',
+    balanced: 'Best mix of speed and savings.',
+    maximum: 'Smallest size, a little slower.',
+  };
 
   const titles = {
     dashboard: 'Dashboard', compress: 'Compress', extract: 'Extract',
@@ -176,10 +184,12 @@ const App = (() => {
   }
 
   function bindCompress() {
-    const dz = $('#dropzone'), input = $('#fileInput');
+    const dz = $('#dropzone'), input = $('#fileInput'), folderInput = $('#folderInput');
     $('#browseBtn').addEventListener('click', () => input.click());
+    $('#browseFolderBtn').addEventListener('click', () => folderInput.click());
     dz.addEventListener('click', (e) => { if (!e.target.closest('button')) input.click(); });
     input.addEventListener('change', () => addFiles([...input.files]));
+    folderInput.addEventListener('change', () => addFiles([...folderInput.files]));
 
     ['dragenter', 'dragover'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('dragover'); }));
     ['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || !dz.contains(e.relatedTarget)) dz.classList.remove('dragover'); }));
@@ -190,6 +200,7 @@ const App = (() => {
       $$('#levelSeg button').forEach((x) => x.classList.remove('active'));
       b.classList.add('active');
       Store.updateSettings({ level: b.dataset.level });
+      updateLevelHint();
       updateEstimate();
     });
 
@@ -199,8 +210,15 @@ const App = (() => {
       $('#toggleEye i').className = p.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash';
     });
 
+    $('#clearSelection').addEventListener('click', clearSelection);
     $('#startCompress').addEventListener('click', runCompression);
+    updateLevelHint();
     renderSelected();
+  }
+
+  function updateLevelHint() {
+    const hint = $('#levelHint');
+    if (hint) hint.textContent = levelHints[Store.settings().level] || '';
   }
 
   function addFiles(files) {
@@ -215,16 +233,28 @@ const App = (() => {
     UI.toast({ type: 'info', title: `${files.length} file(s) added`, message: 'Ready to compress' });
   }
 
+  function clearSelection() {
+    selectedFiles = [];
+    $('#archiveName').value = '';
+    renderSelected();
+  }
+
   function renderSelected() {
-    const list = $('#selectedList');
-    list.innerHTML = selectedFiles.map((f, i) => `
-      <div class="selected-item">
-        <div class="si-ico"><i class="bi ${iconForExt(fileExt(f.name))}"></i></div>
-        <div class="si-info"><div class="si-name">${escapeHtml(f.name)}</div><div class="si-size">${formatBytes(f.size)} · ${fileExt(f.name).toUpperCase() || 'FILE'}</div></div>
-        <button class="si-remove" data-remove="${i}"><i class="bi bi-x-lg"></i></button>
-      </div>`).join('');
+    const body = $('#selectedBody');
+    const block = $('#selectedBlock');
+    if (!body || !block) return;
+    block.classList.toggle('hidden', selectedFiles.length === 0);
+    body.innerHTML = selectedFiles.map((f, i) => `
+      <tr data-file-row="${i}">
+        <td><div class="t-file"><i class="bi ${iconForExt(fileExt(f.name))}"></i>${escapeHtml(f.name)}</div></td>
+        <td><span class="badge muted">${(fileExt(f.name) || 'file').toUpperCase()}</span></td>
+        <td class="mono">${formatBytes(f.size)}</td>
+        <td><span class="badge muted" id="fileStatus-${i}"><span class="b-dot"></span>Queued</span></td>
+        <td><button class="icon-btn si-remove" style="width:30px;height:30px" data-remove="${i}"><i class="bi bi-x-lg"></i></button></td>
+      </tr>`).join('');
     $$('[data-remove]').forEach((b) => b.addEventListener('click', () => { selectedFiles.splice(+b.dataset.remove, 1); renderSelected(); }));
-    $('#startCompress').disabled = selectedFiles.length === 0;
+    $('#selCount').textContent = selectedFiles.length;
+    $('#startCompress').disabled = selectedFiles.length === 0 || isCompressing;
     updateEstimate();
   }
 
@@ -232,61 +262,118 @@ const App = (() => {
     const total = selectedFiles.reduce((s, f) => s + f.size, 0);
     $('#estFiles').textContent = selectedFiles.length;
     $('#estSize').textContent = formatBytes(total);
-    if (!selectedFiles.length) { $('#estCompressed').textContent = '0 B'; $('#estSaved').textContent = '0%'; return; }
+    $('#dzCount').textContent = selectedFiles.length;
+    $('#dzSize').textContent = formatBytes(total);
+    if (!selectedFiles.length) {
+      $('#estCompressed').textContent = '0 B';
+      $('#estSaved').textContent = '0%';
+      $('#estRatio').textContent = '0%';
+      return;
+    }
     const level = Store.settings().level;
     let compressed = 0;
     for (const f of selectedFiles) {
       const r = await API.analyzeLocal(f, level);
       compressed += r.compressedSize;
     }
+    const saved = Math.round((1 - compressed / total) * 100);
     $('#estCompressed').textContent = formatBytes(compressed);
-    $('#estSaved').textContent = Math.round((1 - compressed / total) * 100) + '%';
+    $('#estSaved').textContent = saved + '%';
+    $('#estRatio').textContent = saved + '%';
+  }
+
+  function setFileStatus(i, cls, text) {
+    const badge = $(`#fileStatus-${i}`);
+    if (badge) badge.className = `badge ${cls}`, badge.innerHTML = `<span class="b-dot"></span>${text}`;
+  }
+
+  function renderQueue(current) {
+    const list = $('#queueList');
+    if (!list) return;
+    list.innerHTML = selectedFiles.map((f, i) => {
+      const state = i < current ? 'done' : i === current ? 'active' : 'wait';
+      const icon = state === 'done' ? 'bi-check-circle-fill' : state === 'active' ? 'bi-arrow-repeat spin-slow' : 'bi-hourglass-split';
+      return `<div class="queue-item ${state}"><i class="bi ${icon}"></i><span class="q-name">${escapeHtml(f.name)}</span><span class="q-size mono">${formatBytes(f.size)}</span></div>`;
+    }).join('');
   }
 
   async function runCompression() {
-    if (!selectedFiles.length) return;
+    if (isCompressing) return;
+    if (!selectedFiles.length) {
+      showError('No file selected', 'Add at least one file before starting compression.', 'bi-file-earmark-x');
+      return;
+    }
     const level = Store.settings().level;
     const password = $('#passwordInput').value;
     let name = $('#archiveName').value.trim() || 'archive.huff';
     if (!/\.(huff|hz)$/i.test(name)) name += '.huff';
 
+    isCompressing = true;
+    cancelRequested = false;
     const card = $('#progressCard');
     card.classList.remove('hidden');
     $('#startCompress').disabled = true;
-    const bar = $('#progressBar'), pct = $('#progressPct'), status = $('#progressStatus'), eta = $('#progressEta'), logC = $('#logConsole');
+    $('#cancelCompress').onclick = () => { cancelRequested = true; };
+
+    const bar = $('#progressBar'), pct = $('#progressPct'), logC = $('#logConsole');
     logC.innerHTML = '';
+    renderQueue(0);
+    log(logC, 'info', `Initializing Huffman engine (${level})…`);
 
     const totalOriginal = selectedFiles.reduce((s, f) => s + f.size, 0);
     let totalCompressed = 0;
+    let bytesDone = 0;
     const start = performance.now();
-    log(logC, 'info', `Initializing Huffman engine (${level})…`);
+    const files = [...selectedFiles];
 
-    const steps = ['Reading files', 'Building frequency table', 'Constructing Huffman tree', 'Assigning prefix codes', 'Encoding bitstream', password ? 'Applying AES encryption' : 'Finalizing archive'];
-    for (let i = 0; i < steps.length; i++) {
-      const p = Math.round(((i + 1) / steps.length) * 100);
-      bar.style.width = p + '%'; pct.textContent = p + '%'; status.textContent = steps[i] + '…';
-      const remain = Math.round(((steps.length - i - 1) * 0.35));
-      eta.textContent = `ETA ${remain}s`;
-      log(logC, i === steps.length - 1 ? 'ok' : 'info', steps[i]);
+    for (let i = 0; i < files.length; i++) {
+      if (cancelRequested) break;
+      const f = files[i];
+      setFileStatus(i, 'info', 'Compressing');
+      renderQueue(i);
+      $('#pmFile').textContent = f.name;
+      $('#pmCount').textContent = `File ${i + 1} of ${files.length}`;
+      log(logC, 'info', `Compressing ${f.name}…`);
+
+      const r = await API.compress(f, { level, password });
+      if (cancelRequested) { setFileStatus(i, 'muted', 'Cancelled'); break; }
+
+      totalCompressed += r.compressedSize;
+      bytesDone += f.size;
+      const elapsed = (performance.now() - start) / 1000;
+      const speed = bytesDone / Math.max(elapsed, 0.001);
+      const remainingBytes = totalOriginal - bytesDone;
+      const p = Math.round((bytesDone / totalOriginal) * 100);
+      bar.style.width = p + '%';
+      pct.textContent = p + '%';
+      $('#pmSpeed').textContent = formatBytes(speed) + '/s';
+      $('#pmEta').textContent = Math.max(0, Math.round(remainingBytes / Math.max(speed, 1))) + ' s';
+      setFileStatus(i, 'success', 'Done');
+      renderQueue(i + 1);
       logC.scrollTop = logC.scrollHeight;
-      await sleep(340);
     }
 
-    for (const f of selectedFiles) {
-      const r = await API.compress(f, { level, password });
-      totalCompressed += r.compressedSize;
+    isCompressing = false;
+
+    if (cancelRequested) {
+      log(logC, 'warn', 'Compression cancelled by user.');
+      $('#pmFile').textContent = 'Cancelled';
+      showError('Compression cancelled', 'You stopped the operation. No archive was created.', 'bi-stop-circle');
+      $('#startCompress').disabled = selectedFiles.length === 0;
+      return;
     }
 
     const timeMs = Math.round(performance.now() - start);
     const ratio = 1 - totalCompressed / totalOriginal;
-    eta.textContent = 'Done'; status.textContent = 'Compression complete';
+    $('#pmFile').textContent = 'Complete';
+    $('#pmEta').textContent = '0 s';
     log(logC, 'ok', `Saved ${formatBytes(totalOriginal - totalCompressed)} (${Math.round(ratio * 100)}%)`);
 
-    const primary = selectedFiles[0];
+    const primary = files[0];
     const archive = {
-      id: uid(), name, sourceName: selectedFiles.map((f) => f.name).join(', '), ext: fileExt(primary.name),
+      id: uid(), name, sourceName: files.map((f) => f.name).join(', '), ext: fileExt(primary.name),
       originalSize: totalOriginal, compressedSize: totalCompressed, ratio, timeMs,
-      fileCount: selectedFiles.length, encrypted: !!password, status: 'success',
+      fileCount: files.length, encrypted: !!password, status: 'success',
       checksum: simpleChecksum(name + totalOriginal), createdAt: Date.now(), level,
     };
     Store.addArchive(archive);
@@ -304,23 +391,40 @@ const App = (() => {
     ]));
   }
 
+  function showError(title, message, icon = 'bi-exclamation-triangle-fill') {
+    const body = el('div', { class: 'error-dialog-body' }, []);
+    body.innerHTML = `<p class="text-muted">${escapeHtml(message)}</p>`;
+    UI.modal({
+      icon: 'danger', iconClass: icon, title, subtitle: '',
+      bodyNode: body,
+      actions: [{ label: 'Close', class: 'btn-ghost', icon: 'bi-x-lg' }],
+    });
+  }
+
   function showSuccess(archive) {
     const body = el('div', {}, []);
     body.innerHTML = `
       <div class="stat-inline"><span class="si-label">Original size</span><span class="si-val">${formatBytes(archive.originalSize)}</span></div>
       <div class="stat-inline"><span class="si-label">Compressed size</span><span class="si-val">${formatBytes(archive.compressedSize)}</span></div>
-      <div class="stat-inline"><span class="si-label">Space saved</span><span class="si-val text-accent">${Math.round(archive.ratio * 100)}%</span></div>
-      <div class="stat-inline"><span class="si-label">Time taken</span><span class="si-val">${archive.timeMs} ms</span></div>
+      <div class="stat-inline"><span class="si-label">Space saved</span><span class="si-val text-accent">${formatBytes(archive.originalSize - archive.compressedSize)} · ${Math.round(archive.ratio * 100)}%</span></div>
+      <div class="stat-inline"><span class="si-label">Compression time</span><span class="si-val">${archive.timeMs} ms</span></div>
+      <div class="stat-inline"><span class="si-label">Files</span><span class="si-val">${archive.fileCount}</span></div>
       <div class="stat-inline"><span class="si-label">Checksum</span><span class="si-val mono">${archive.checksum}</span></div>`;
     UI.successModal({
       title: 'Compression complete!', subtitle: archive.name,
       bodyNode: body,
       actions: [
-        { label: 'View History', class: 'btn-ghost', icon: 'bi-clock-history', onClick: () => navigate('history') },
+        { label: 'Open Folder', class: 'btn-ghost', icon: 'bi-folder2-open', onClick: () => { openOutputFolder(); return false; } },
+        { label: 'Compress Another', class: 'btn-ghost', icon: 'bi-plus-lg', onClick: () => { navigate('compress'); } },
         { label: 'Download', class: 'btn-accent', icon: 'bi-download', onClick: () => { downloadArchive(archive); return true; } },
       ],
     });
     setTimeout(() => { if (currentView === 'compress') navigate('compress'); }, 400);
+  }
+
+  function openOutputFolder() {
+    const folder = Store.settings().outputFolder || 'compressed/';
+    UI.toast({ type: 'info', title: 'Output folder', message: folder });
   }
 
   function bindExtract() {

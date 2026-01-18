@@ -180,27 +180,49 @@ const Views = (() => {
           <div class="glass-card">
             <div class="dropzone" id="dropzone">
               <input type="file" class="file-input" id="fileInput" multiple />
+              <input type="file" class="file-input" id="folderInput" webkitdirectory directory multiple />
               <div class="dz-icon"><i class="bi bi-cloud-arrow-up-fill"></i></div>
-              <h3>Drop files here</h3>
-              <p>or click to browse. Supports any file type — text compresses best.</p>
-              <button class="btn btn-primary" id="browseBtn"><i class="bi bi-folder2-open"></i> Browse Files</button>
-              <div class="dz-formats">
-                <span class="badge muted">TXT</span><span class="badge muted">PDF</span><span class="badge muted">CSV</span>
-                <span class="badge muted">JSON</span><span class="badge muted">LOG</span><span class="badge muted">Any</span>
+              <h3>Drop files or a folder here</h3>
+              <p>or use the buttons below. Supports any file type — text compresses best.</p>
+              <div class="dz-actions">
+                <button class="btn btn-primary" id="browseBtn"><i class="bi bi-folder2-open"></i> Browse Files</button>
+                <button class="btn btn-ghost" id="browseFolderBtn"><i class="bi bi-folder-plus"></i> Browse Folder</button>
+              </div>
+              <div class="dz-meta" id="dzMeta">
+                <span class="badge muted"><i class="bi bi-files"></i> <b id="dzCount">0</b> files</span>
+                <span class="badge muted"><i class="bi bi-hdd"></i> <b id="dzSize">0 B</b></span>
               </div>
             </div>
-            <div class="selected-list" id="selectedList"></div>
+
+            <div class="selected-block hidden" id="selectedBlock">
+              <div class="section-head" style="margin:var(--s-5) 0 var(--s-3)">
+                <div class="st"><h3>Selected Files</h3><p><span id="selCount">0</span> file(s) queued</p></div>
+                <button class="btn btn-sm btn-ghost" id="clearSelection"><i class="bi bi-x-circle"></i> Clear</button>
+              </div>
+              <div class="table-wrap files-table-wrap">
+                <table class="data" id="selectedTable">
+                  <thead><tr><th>File</th><th>Type</th><th>Size</th><th>Status</th><th></th></tr></thead>
+                  <tbody id="selectedBody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <div class="glass-card hidden" id="progressCard">
             <div class="flex items-center justify-between mb-4">
-              <h3>Compressing…</h3>
+              <h3><i class="bi bi-arrow-repeat spin-slow"></i> Compressing…</h3>
               <span class="badge info" id="progressPct">0%</span>
             </div>
             <div class="progress accent"><div class="bar" id="progressBar"></div></div>
-            <div class="flex items-center justify-between mt-2">
-              <small id="progressStatus">Preparing…</small>
-              <small id="progressEta">ETA —</small>
+            <div class="progress-meta" id="progressMeta">
+              <div class="pm-cell"><span class="pm-k">Current file</span><span class="pm-v" id="pmFile">—</span></div>
+              <div class="pm-cell"><span class="pm-k">Progress</span><span class="pm-v" id="pmCount">File 0 of 0</span></div>
+              <div class="pm-cell"><span class="pm-k">Speed</span><span class="pm-v" id="pmSpeed">— MB/s</span></div>
+              <div class="pm-cell"><span class="pm-k">Remaining</span><span class="pm-v" id="pmEta">— s</span></div>
+            </div>
+            <div class="queue-list" id="queueList"></div>
+            <div class="flex justify-end mt-4">
+              <button class="btn btn-sm btn-danger-ghost" id="cancelCompress"><i class="bi bi-stop-circle"></i> Cancel</button>
             </div>
             <div class="log-console mt-4" id="logConsole"></div>
           </div>
@@ -216,6 +238,7 @@ const Views = (() => {
                 <button data-level="balanced" class="${level === 'balanced' ? 'active' : ''}" style="flex:1">Balanced</button>
                 <button data-level="maximum" class="${level === 'maximum' ? 'active' : ''}" style="flex:1">Max</button>
               </div>
+              <div class="level-hint" id="levelHint"></div>
             </div>
             <div class="field">
               <label>Archive Name</label>
@@ -232,9 +255,10 @@ const Views = (() => {
           </div>
 
           <div class="glass-card">
-            <h3 class="mb-4">Live Estimate</h3>
+            <h3 class="mb-4">Compression Info</h3>
             <div class="stat-inline"><span class="si-label">Files selected</span><span class="si-val" id="estFiles">0</span></div>
             <div class="stat-inline"><span class="si-label">Total size</span><span class="si-val" id="estSize">0 B</span></div>
+            <div class="stat-inline"><span class="si-label">Est. ratio</span><span class="si-val" id="estRatio">0%</span></div>
             <div class="stat-inline"><span class="si-label">Est. compressed</span><span class="si-val" id="estCompressed">0 B</span></div>
             <div class="stat-inline"><span class="si-label">Est. saved</span><span class="si-val text-accent" id="estSaved">0%</span></div>
           </div>
