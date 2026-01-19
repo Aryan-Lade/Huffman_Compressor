@@ -1,0 +1,36 @@
+.dz-actions { display: flex; gap: var(--s-3); justify-content: center; flex-wrap: wrap; margin-bottom: var(--s-4); }
+.dz-meta { display: flex; gap: var(--s-2); justify-content: center; flex-wrap: wrap; }
+.dz-meta .badge b { color: var(--text); }
+
+.files-table-wrap { max-height: 320px; overflow-y: auto; }
+.files-table-wrap table.data td .si-remove { color: var(--text-dim); }
+.files-table-wrap table.data td .si-remove:hover { color: var(--danger); background: rgba(239,68,68,0.12); }
+
+.level-hint { margin-top: var(--s-2); font-size: 0.78rem; color: var(--text-muted); }
+
+.progress-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: var(--s-3); margin-top: var(--s-4); }
+.progress-meta .pm-cell { background: var(--card); border: 1px solid var(--border); border-radius: var(--r-md); padding: var(--s-3); display: flex; flex-direction: column; gap: 4px; }
+.progress-meta .pm-k { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); }
+.progress-meta .pm-v { font-size: 0.9rem; font-weight: 700; font-family: var(--font-mono); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.queue-list { display: flex; flex-direction: column; gap: 4px; margin-top: var(--s-4); }
+.queue-item { display: flex; align-items: center; gap: var(--s-3); padding: var(--s-2) var(--s-3); border-radius: var(--r-sm); font-size: 0.84rem; transition: background var(--dur-fast) var(--ease); }
+.queue-item .q-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.queue-item .q-size { color: var(--text-dim); font-size: 0.76rem; flex-shrink: 0; }
+.queue-item.wait { color: var(--text-muted); }
+.queue-item.wait i { color: var(--text-dim); }
+.queue-item.active { background: rgba(59,130,246,0.12); color: var(--primary); }
+.queue-item.done i { color: var(--accent); }
+
+.btn-danger-ghost { background: rgba(239,68,68,0.12); color: var(--danger); }
+.btn-danger-ghost:hover { background: rgba(239,68,68,0.2); }
+
+.error-dialog-body { animation: shake 0.4s var(--ease); }
+
+.spin-slow { display: inline-block; animation: spin 1.4s linear infinite; }
+
+@media (max-width: 640px) {
+  .progress-meta { grid-template-columns: repeat(2, 1fr); }
+  .dz-actions { flex-direction: column; }
+  .dz-actions .btn { width: 100%; }
+}
