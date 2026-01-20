@@ -269,29 +269,108 @@ const Views = (() => {
   function extract() {
     const encrypted = Store.get().archives.filter((a) => a.encrypted);
     return `
-      ${sectionHead('Extract', 'Restore your original files from a HuffZip archive.', '')}
+      ${sectionHead('Extract', 'Restore your original files from a HuffZip archive.',
+        `<span class="badge info"><i class="bi bi-box-arrow-up"></i> Huffman Decoder</span>`)}
+
       <div class="two-col" style="grid-template-columns:1.6fr 1fr;align-items:start">
-        <div class="glass-card">
-          <div class="dropzone" id="extractZone">
-            <input type="file" class="file-input" id="extractInput" accept=".huff,.hz,.zip" />
-            <div class="dz-icon" style="background:var(--grad-accent)"><i class="bi bi-box-arrow-up"></i></div>
-            <h3>Drop an archive to extract</h3>
-            <p>Accepts .huff, .hz and .zip archives. Encrypted archives will ask for a password.</p>
-            <button class="btn btn-accent" id="browseExtract"><i class="bi bi-folder2-open"></i> Select Archive</button>
+        <div class="card-stack">
+          <div class="glass-card">
+            <div class="dropzone" id="extractZone">
+              <input type="file" class="file-input" id="extractInput" accept=".huff,.hz,.zip" multiple />
+              <div class="dz-icon" style="background:var(--grad-accent)"><i class="bi bi-box-arrow-up"></i></div>
+              <h3>Drop archives to extract</h3>
+              <p>or use the button below. Accepts .huff, .hz and .zip archives.</p>
+              <div class="dz-actions">
+                <button class="btn btn-accent" id="browseExtract"><i class="bi bi-folder2-open"></i> Select Archives</button>
+              </div>
+              <div class="dz-meta">
+                <span class="badge muted"><i class="bi bi-archive"></i> <b id="exCount">0</b> archives</span>
+                <span class="badge muted"><i class="bi bi-hdd"></i> <b id="exSize">0 B</b></span>
+              </div>
+            </div>
+
+            <div class="selected-block hidden" id="extractBlock">
+              <div class="section-head" style="margin:var(--s-5) 0 var(--s-3)">
+                <div class="st"><h3>Selected Archives</h3><p><span id="exSelCount">0</span> archive(s) queued</p></div>
+                <button class="btn btn-sm btn-ghost" id="clearExtract"><i class="bi bi-x-circle"></i> Clear</button>
+              </div>
+              <div class="table-wrap files-table-wrap">
+                <table class="data" id="extractTable">
+                  <thead><tr><th>Archive</th><th>Type</th><th>Size</th><th>Lock</th><th>Status</th><th></th></tr></thead>
+                  <tbody id="extractBody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="glass-card inner-card hidden" id="previewCard">
+              <div class="section-head" style="margin-bottom:var(--s-3)">
+                <div class="st"><h3>Archive Contents</h3><p id="previewSub">Files inside the selected archive</p></div>
+              </div>
+              <div class="table-wrap files-table-wrap">
+                <table class="data" id="previewTable">
+                  <thead><tr><th>File</th><th>Type</th><th>Original</th><th>Compressed</th></tr></thead>
+                  <tbody id="previewBody"></tbody>
+                </table>
+              </div>
+            </div>
           </div>
-          <div class="selected-list" id="extractList"></div>
+
+          <div class="glass-card hidden" id="extractProgressCard">
+            <div class="flex items-center justify-between mb-4">
+              <h3><i class="bi bi-arrow-repeat spin-slow"></i> Extracting…</h3>
+              <span class="badge info" id="exProgressPct">0%</span>
+            </div>
+            <div class="progress accent"><div class="bar" id="exProgressBar"></div></div>
+            <div class="progress-meta">
+              <div class="pm-cell"><span class="pm-k">Current file</span><span class="pm-v" id="exPmFile">—</span></div>
+              <div class="pm-cell"><span class="pm-k">Progress</span><span class="pm-v" id="exPmCount">File 0 of 0</span></div>
+              <div class="pm-cell"><span class="pm-k">Speed</span><span class="pm-v" id="exPmSpeed">— MB/s</span></div>
+              <div class="pm-cell"><span class="pm-k">Remaining</span><span class="pm-v" id="exPmEta">— s</span></div>
+            </div>
+            <div class="queue-list" id="exQueueList"></div>
+            <div class="flex justify-end mt-4">
+              <button class="btn btn-sm btn-danger-ghost" id="cancelExtract"><i class="bi bi-stop-circle"></i> Cancel</button>
+            </div>
+            <div class="log-console mt-4" id="exLogConsole"></div>
+          </div>
         </div>
-        <div class="glass-card">
-          <h3 class="mb-4">Your Archives</h3>
-          <div class="list-clean">
-            ${Store.get().archives.slice(0, 6).map((a) => `
-              <div class="file-row" data-extract-archive="${a.id}">
-                <div class="file-ico"><i class="bi ${iconForExt(a.ext)}"></i></div>
-                <div class="file-info"><div class="file-name">${escapeHtml(a.name)}</div><div class="file-sub">${formatBytes(a.compressedSize)} · ${a.encrypted ? 'Encrypted' : 'Open'}</div></div>
-                <button class="btn btn-sm btn-ghost" data-do-extract="${a.id}"><i class="bi bi-box-arrow-up"></i></button>
-              </div>`).join('') || emptyInline('No archives', 'Compress a file first.')}
+
+        <div class="card-stack">
+          <div class="glass-card">
+            <h3 class="mb-4">Destination</h3>
+            <div class="field">
+              <label>Extract to</label>
+              <div class="segmented w-full" id="destSeg" style="display:flex">
+                <button data-dest="here" class="active" style="flex:1">Extract Here</button>
+                <button data-dest="custom" style="flex:1">Custom Folder</button>
+              </div>
+            </div>
+            <div class="field hidden" id="customFolderField">
+              <label>Custom folder path</label>
+              <input class="input" id="customFolder" placeholder="e.g. C:/Users/Aryan/Extracted" />
+            </div>
+            <button class="btn btn-accent btn-block btn-glow" id="startExtractBtn" disabled><i class="bi bi-box-arrow-up"></i> Extract Now</button>
           </div>
-          ${encrypted.length ? `<div class="mt-4"><span class="badge warn"><i class="bi bi-shield-lock"></i> ${encrypted.length} encrypted</span></div>` : ''}
+
+          <div class="glass-card">
+            <h3 class="mb-4">Archive Info</h3>
+            <div id="archiveInfo">
+              ${emptyInline('No archive selected', 'Drop or browse an archive to see its details.')}
+            </div>
+          </div>
+
+          <div class="glass-card">
+            <h3 class="mb-4">Your Archives</h3>
+            <div class="list-clean">
+              ${Store.get().archives.slice(0, 6).map((a) => `
+                <div class="file-row" data-extract-archive="${a.id}">
+                  <div class="file-ico"><i class="bi ${iconForExt(a.ext)}"></i></div>
+                  <div class="file-info"><div class="file-name">${escapeHtml(a.name)}</div><div class="file-sub">${formatBytes(a.compressedSize)} · ${a.encrypted ? 'Encrypted' : 'Open'}</div></div>
+                  <button class="btn btn-sm btn-ghost" data-do-extract="${a.id}"><i class="bi bi-box-arrow-up"></i></button>
+                </div>`).join('') || emptyInline('No archives', 'Compress a file first.')}
+            </div>
+            ${encrypted.length ? `<div class="mt-4"><span class="badge warn"><i class="bi bi-shield-lock"></i> ${encrypted.length} encrypted</span></div>` : ''}
+          </div>
         </div>
       </div>`;
   }

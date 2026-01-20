@@ -4,6 +4,10 @@ const App = (() => {
   let extractFile = null;
   let cancelRequested = false;
   let isCompressing = false;
+  let selectedArchives = [];
+  let extractCancelRequested = false;
+  let isExtracting = false;
+  let sessionPassword = '';
 
   const levelHints = {
     fast: 'Fastest speed, lighter savings.',
@@ -431,62 +435,310 @@ const App = (() => {
     const zone = $('#extractZone'), input = $('#extractInput');
     $('#browseExtract').addEventListener('click', () => input.click());
     zone.addEventListener('click', (e) => { if (!e.target.closest('button')) input.click(); });
-    input.addEventListener('change', () => { if (input.files[0]) startExtract(input.files[0]); });
+    input.addEventListener('change', () => addArchives([...input.files]));
     ['dragenter', 'dragover'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.add('dragover'); }));
-    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); zone.classList.remove('dragover'); }));
-    zone.addEventListener('drop', (e) => { e.preventDefault(); if (e.dataTransfer.files[0]) startExtract(e.dataTransfer.files[0]); });
+    ['dragleave', 'drop'].forEach((ev) => zone.addEventListener(ev, (e) => { e.preventDefault(); if (ev === 'drop' || !zone.contains(e.relatedTarget)) zone.classList.remove('dragover'); }));
+    zone.addEventListener('drop', (e) => { e.preventDefault(); addArchives([...e.dataTransfer.files]); });
+
+    $('#clearExtract').addEventListener('click', clearExtractSelection);
+    $('#startExtractBtn').addEventListener('click', runExtraction);
+
+    $('#destSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-dest]'); if (!b) return;
+      $$('#destSeg button').forEach((x) => x.classList.remove('active'));
+      b.classList.add('active');
+      $('#customFolderField').classList.toggle('hidden', b.dataset.dest !== 'custom');
+    });
 
     $$('[data-do-extract]').forEach((b) => b.addEventListener('click', () => {
       const archive = Store.get().archives.find((a) => a.id === b.dataset.doExtract);
-      if (archive) extractArchive(archive);
+      if (archive) addStoreArchive(archive);
     }));
+
+    renderExtractSelected();
   }
 
-  function startExtract(file) {
-    const fake = { id: uid(), name: file.name, encrypted: false, compressedSize: file.size, originalSize: Math.round(file.size / 0.45), ext: 'huff', fileCount: 1 };
-    extractArchive(fake);
+  const ARCHIVE_EXTS = ['huff', 'hz', 'zip'];
+
+  function isValidArchive(name) {
+    return ARCHIVE_EXTS.includes(fileExt(name).toLowerCase());
+  }
+
+  function buildArchiveFromFile(file) {
+    const ext = fileExt(file.name).toLowerCase();
+    const encrypted = /secure|lock|enc/i.test(file.name);
+    const ratio = ext === 'zip' ? 0.42 : 0.55;
+    const fileCount = Math.max(1, Math.round(file.size / 220000) % 12 + 1);
+    return {
+      id: uid(), name: file.name, ext, encrypted,
+      compressedSize: file.size, originalSize: Math.round(file.size / (1 - ratio)),
+      ratio, fileCount, createdAt: file.lastModified || Date.now(), fromStore: false,
+    };
+  }
+
+  function addArchives(files) {
+    if (!files.length) return;
+    let added = 0, rejected = 0;
+    files.forEach((f) => {
+      if (!isValidArchive(f.name)) { rejected++; return; }
+      selectedArchives.push(buildArchiveFromFile(f));
+      added++;
+    });
+    if (rejected) showError('Unsupported archive format', `${rejected} file(s) were not .huff, .hz or .zip archives and were skipped.`, 'bi-file-earmark-x');
+    if (added) UI.toast({ type: 'info', title: `${added} archive(s) added`, message: 'Ready to extract' });
+    renderExtractSelected();
+  }
+
+  function addStoreArchive(archive) {
+    selectedArchives.push({ ...archive, fromStore: true });
+    renderExtractSelected();
+    UI.toast({ type: 'info', title: 'Archive added', message: archive.name });
+  }
+
+  function clearExtractSelection() {
+    selectedArchives = [];
+    renderExtractSelected();
+  }
+
+  function renderExtractSelected() {
+    const body = $('#extractBody');
+    const block = $('#extractBlock');
+    if (!body || !block) return;
+    block.classList.toggle('hidden', selectedArchives.length === 0);
+    body.innerHTML = selectedArchives.map((a, i) => `
+      <tr data-archive-row="${i}">
+        <td><div class="t-file"><i class="bi ${iconForExt(a.ext)}"></i>${escapeHtml(a.name)}</div></td>
+        <td><span class="badge muted">${a.ext.toUpperCase()}</span></td>
+        <td class="mono">${formatBytes(a.compressedSize)}</td>
+        <td>${a.encrypted ? '<span class="badge warn"><i class="bi bi-lock-fill"></i></span>' : '<span class="badge muted">—</span>'}</td>
+        <td><span class="badge muted" id="exStatus-${i}"><span class="b-dot"></span>Queued</span></td>
+        <td><button class="icon-btn si-remove" style="width:30px;height:30px" data-ex-remove="${i}"><i class="bi bi-x-lg"></i></button></td>
+      </tr>`).join('');
+    $$('[data-ex-remove]').forEach((b) => b.addEventListener('click', () => { selectedArchives.splice(+b.dataset.exRemove, 1); renderExtractSelected(); }));
+
+    const total = selectedArchives.reduce((s, a) => s + a.compressedSize, 0);
+    $('#exSelCount').textContent = selectedArchives.length;
+    $('#exCount').textContent = selectedArchives.length;
+    $('#exSize').textContent = formatBytes(total);
+    $('#startExtractBtn').disabled = selectedArchives.length === 0 || isExtracting;
+
+    updateArchiveInfo(selectedArchives[0] || null);
+    renderPreview(selectedArchives[0] || null);
+  }
+
+  function updateArchiveInfo(archive) {
+    const box = $('#archiveInfo');
+    if (!box) return;
+    if (!archive) {
+      box.innerHTML = `<div class="empty-state" style="padding:32px 16px"><div class="es-illus" style="width:72px;height:72px;font-size:1.8rem"><i class="bi bi-inbox"></i></div><h3>No archive selected</h3><p>Drop or browse an archive to see its details.</p></div>`;
+      return;
+    }
+    box.innerHTML = `
+      <div class="stat-inline"><span class="si-label">Archive name</span><span class="si-val" style="font-size:.82rem">${escapeHtml(archive.name)}</span></div>
+      <div class="stat-inline"><span class="si-label">Archive size</span><span class="si-val">${formatBytes(archive.compressedSize)}</span></div>
+      <div class="stat-inline"><span class="si-label">Compression date</span><span class="si-val" style="font-size:.82rem">${formatDate(archive.createdAt)}</span></div>
+      <div class="stat-inline"><span class="si-label">Archive type</span><span class="si-val">${archive.ext.toUpperCase()}</span></div>
+      <div class="stat-inline"><span class="si-label">Files inside</span><span class="si-val">${archive.fileCount}</span></div>
+      <div class="stat-inline"><span class="si-label">Password protected</span><span class="si-val ${archive.encrypted ? 'text-danger' : 'text-accent'}">${archive.encrypted ? 'Yes' : 'No'}</span></div>
+      <div class="stat-inline"><span class="si-label">Compression ratio</span><span class="si-val">${Math.round(archive.ratio * 100)}%</span></div>
+      <div class="stat-inline"><span class="si-label">Est. extracted size</span><span class="si-val text-accent">${formatBytes(archive.originalSize)}</span></div>`;
+  }
+
+  function archiveContents(archive) {
+    const kinds = [['Document.pdf', 'pdf'], ['Report.docx', 'docx'], ['Data.csv', 'csv'], ['Notes.txt', 'txt'], ['Image.png', 'png'], ['config.json', 'json'], ['Archive.log', 'log'], ['Sheet.xlsx', 'xlsx']];
+    const count = Math.min(archive.fileCount, 12);
+    const per = archive.originalSize / count;
+    const perC = archive.compressedSize / count;
+    return Array.from({ length: count }, (_, i) => {
+      const [base, type] = kinds[i % kinds.length];
+      const name = i < kinds.length ? base : `${base.replace(/\.\w+$/, '')}-${i + 1}.${type}`;
+      return { name, type, original: Math.round(per * (0.6 + (i % 5) * 0.18)), compressed: Math.round(perC * (0.6 + (i % 5) * 0.18)) };
+    });
+  }
+
+  function renderPreview(archive) {
+    const card = $('#previewCard'), body = $('#previewBody');
+    if (!card || !body) return;
+    if (!archive) { card.classList.add('hidden'); return; }
+    card.classList.remove('hidden');
+    $('#previewSub').textContent = `${archive.fileCount} file(s) inside ${archive.name}`;
+    body.innerHTML = archiveContents(archive).map((f) => `
+      <tr>
+        <td><div class="t-file"><i class="bi ${iconForExt(f.type)}"></i>${escapeHtml(f.name)}</div></td>
+        <td><span class="badge muted">${f.type.toUpperCase()}</span></td>
+        <td class="mono">${formatBytes(f.original)}</td>
+        <td class="mono">${formatBytes(f.compressed)}</td>
+      </tr>`).join('');
   }
 
   function extractArchive(archive) {
-    if (archive.encrypted) return askPassword(archive);
-    doExtract(archive);
+    addStoreArchive(archive);
   }
 
-  function askPassword(archive) {
-    const input = el('input', { class: 'input', type: 'password', placeholder: 'Enter archive password' });
-    const err = el('div', { class: 'text-danger fs-sm mt-2 hidden', text: 'Incorrect password. Try again.' });
-    let attempts = 0;
-    const { node, close } = UI.modal({
-      icon: 'danger', iconClass: 'bi-shield-lock-fill', title: 'Password required', subtitle: `${archive.name} is encrypted.`,
-      bodyNode: el('div', { class: 'field' }, [input, err]),
-      actions: [
-        { label: 'Cancel', class: 'btn-ghost' },
-        { label: 'Unlock', class: 'btn-primary', icon: 'bi-unlock-fill', onClick: () => {
-          attempts++;
-          if (input.value === 'huffzip' || attempts >= 3) { close(); doExtract(archive); }
-          else { err.classList.remove('hidden'); node.classList.add('shake'); setTimeout(() => node.classList.remove('shake'), 500); input.value = ''; UI.toast({ type: 'error', title: 'Wrong password', message: `Attempt ${attempts} of 3 · hint: huffzip` }); return true; }
-        } },
-      ],
+  function destinationFolder() {
+    const dest = $('#destSeg') && $('#destSeg .active') ? $('#destSeg .active').dataset.dest : 'here';
+    if (dest === 'custom') {
+      const custom = ($('#customFolder').value || '').trim();
+      return custom || Store.settings().outputFolder || './extracted/';
+    }
+    return Store.settings().outputFolder || './extracted/';
+  }
+
+  function askPasswordAsync(archive) {
+    return new Promise((resolve) => {
+      const input = el('input', { class: 'input', type: 'password', placeholder: 'Enter archive password' });
+      const eye = el('button', { class: 'toggle-eye', type: 'button' }, [el('i', { class: 'bi bi-eye' })]);
+      eye.addEventListener('click', () => { input.type = input.type === 'password' ? 'text' : 'password'; eye.querySelector('i').className = input.type === 'password' ? 'bi bi-eye' : 'bi bi-eye-slash'; });
+      const group = el('div', { class: 'input-group' }, [input, eye]);
+      const remember = el('input', { type: 'checkbox', id: 'rememberPass' });
+      const rememberRow = el('label', { class: 'remember-row' }, [remember, ' Remember for this session']);
+      const err = el('div', { class: 'text-danger fs-sm mt-2 hidden', text: 'Incorrect password. Try again.' });
+      let attempts = 0;
+      const { node, close } = UI.modal({
+        icon: 'danger', iconClass: 'bi-shield-lock-fill', title: 'Password required', subtitle: `${archive.name} is encrypted.`,
+        bodyNode: el('div', { class: 'field' }, [group, rememberRow, err]),
+        actions: [
+          { label: 'Cancel', class: 'btn-ghost', onClick: () => { resolve(null); } },
+          { label: 'Unlock', class: 'btn-primary', icon: 'bi-unlock-fill', onClick: () => {
+            attempts++;
+            if (input.value === 'huffzip') {
+              if (remember.checked) sessionPassword = input.value;
+              close(); resolve(input.value);
+            } else if (attempts >= 3) {
+              close(); resolve(null);
+              showError('Wrong password', 'Maximum attempts reached. This archive was skipped.', 'bi-shield-lock-fill');
+            } else {
+              err.classList.remove('hidden'); node.classList.add('shake'); setTimeout(() => node.classList.remove('shake'), 500);
+              input.value = ''; UI.toast({ type: 'error', title: 'Wrong password', message: `Attempt ${attempts} of 3 · hint: huffzip` });
+              return true;
+            }
+          } },
+        ],
+      });
+      setTimeout(() => input.focus(), 100);
     });
-    setTimeout(() => input.focus(), 100);
   }
 
-  async function doExtract(archive) {
-    const body = el('div', { class: 'text-center' }, []);
-    body.innerHTML = `<div class="spinner" style="margin:0 auto 16px"></div><p>Verifying checksum and decoding…</p>`;
-    const { close } = UI.modal({ icon: 'success', iconClass: 'bi-box-arrow-up', title: 'Extracting…', subtitle: archive.name, bodyNode: body });
-    await sleep(1400);
-    close();
-    Store.addExtraction({ id: uid(), name: archive.name, size: archive.originalSize, fileCount: archive.fileCount || 1, createdAt: Date.now() });
-    Store.addNotification({ icon: 'bi-box-arrow-up', title: 'Extraction complete', body: `${archive.name} restored` });
+  function setExtractStatus(i, cls, text) {
+    const badge = $(`#exStatus-${i}`);
+    if (badge) badge.className = `badge ${cls}`, badge.innerHTML = `<span class="b-dot"></span>${text}`;
+  }
+
+  function renderExtractQueue(current) {
+    const list = $('#exQueueList');
+    if (!list) return;
+    list.innerHTML = selectedArchives.map((a, i) => {
+      const state = i < current ? 'done' : i === current ? 'active' : 'wait';
+      const icon = state === 'done' ? 'bi-check-circle-fill' : state === 'active' ? 'bi-arrow-repeat spin-slow' : 'bi-hourglass-split';
+      return `<div class="queue-item ${state}"><i class="bi ${icon}"></i><span class="q-name">${escapeHtml(a.name)}</span><span class="q-size mono">${formatBytes(a.compressedSize)}</span></div>`;
+    }).join('');
+  }
+
+  async function runExtraction() {
+    if (isExtracting) return;
+    if (!selectedArchives.length) {
+      showError('No archive selected', 'Add at least one archive before starting extraction.', 'bi-file-earmark-x');
+      return;
+    }
+
+    isExtracting = true;
+    extractCancelRequested = false;
+    const dest = destinationFolder();
+    const card = $('#extractProgressCard');
+    card.classList.remove('hidden');
+    $('#startExtractBtn').disabled = true;
+    $('#cancelExtract').onclick = () => { extractCancelRequested = true; };
+
+    const bar = $('#exProgressBar'), pct = $('#exProgressPct'), logC = $('#exLogConsole');
+    logC.innerHTML = '';
+    renderExtractQueue(0);
+    log(logC, 'info', `Preparing extraction to ${dest}…`);
+
+    const archives = [...selectedArchives];
+    const totalBytes = archives.reduce((s, a) => s + a.compressedSize, 0);
+    let bytesDone = 0, restoredFiles = 0, restoredBytes = 0, extracted = 0;
+    const start = performance.now();
+
+    for (let i = 0; i < archives.length; i++) {
+      if (extractCancelRequested) break;
+      const a = archives[i];
+      setExtractStatus(i, 'info', 'Verifying');
+      renderExtractQueue(i);
+      $('#exPmFile').textContent = a.name;
+      $('#exPmCount').textContent = `File ${i + 1} of ${archives.length}`;
+
+      if (a.encrypted && !sessionPassword) {
+        log(logC, 'warn', `${a.name} is encrypted — password required.`);
+        const pass = await askPasswordAsync(a);
+        if (pass === null) { setExtractStatus(i, 'danger', 'Skipped'); log(logC, 'err', `Skipped ${a.name} (no valid password).`); continue; }
+      }
+
+      setExtractStatus(i, 'info', 'Extracting');
+      log(logC, 'info', `Decoding ${a.name}…`);
+      await sleep(500);
+      if (extractCancelRequested) { setExtractStatus(i, 'muted', 'Cancelled'); break; }
+
+      bytesDone += a.compressedSize;
+      restoredFiles += a.fileCount;
+      restoredBytes += a.originalSize;
+      extracted++;
+      const elapsed = (performance.now() - start) / 1000;
+      const speed = bytesDone / Math.max(elapsed, 0.001);
+      const p = Math.round((bytesDone / totalBytes) * 100);
+      bar.style.width = p + '%';
+      pct.textContent = p + '%';
+      $('#exPmSpeed').textContent = formatBytes(speed) + '/s';
+      $('#exPmEta').textContent = Math.max(0, Math.round((totalBytes - bytesDone) / Math.max(speed, 1))) + ' s';
+      setExtractStatus(i, 'success', 'Done');
+      renderExtractQueue(i + 1);
+      Store.addExtraction({ id: uid(), name: a.name, size: a.originalSize, fileCount: a.fileCount, createdAt: Date.now() });
+      log(logC, 'ok', `Extracted ${a.name} (${a.fileCount} files).`);
+      logC.scrollTop = logC.scrollHeight;
+    }
+
+    isExtracting = false;
+
+    if (extractCancelRequested) {
+      log(logC, 'warn', 'Extraction cancelled by user.');
+      $('#exPmFile').textContent = 'Cancelled';
+      showError('Extraction cancelled', 'You stopped the operation before it finished.', 'bi-stop-circle');
+      $('#startExtractBtn').disabled = selectedArchives.length === 0;
+      return;
+    }
+
+    if (!extracted) {
+      showError('Extraction failed', 'No archives could be extracted. Check passwords and try again.', 'bi-exclamation-triangle-fill');
+      $('#startExtractBtn').disabled = selectedArchives.length === 0;
+      return;
+    }
+
+    const timeMs = Math.round(performance.now() - start);
+    $('#exPmFile').textContent = 'Complete';
+    $('#exPmEta').textContent = '0 s';
+    Store.addNotification({ icon: 'bi-box-arrow-up', title: 'Extraction complete', body: `${extracted} archive(s) restored` });
+    showExtractSuccess({ count: extracted, dest, restoredFiles, restoredBytes, timeMs });
+    selectedArchives = [];
+  }
+
+  function showExtractSuccess({ count, dest, restoredFiles, restoredBytes, timeMs }) {
     const res = el('div', {});
     res.innerHTML = `
-      <div class="stat-inline"><span class="si-label">Files restored</span><span class="si-val">${archive.fileCount || 1}</span></div>
-      <div class="stat-inline"><span class="si-label">Total size</span><span class="si-val">${formatBytes(archive.originalSize)}</span></div>
-      <div class="stat-inline"><span class="si-label">Checksum</span><span class="si-val text-accent"><i class="bi bi-check-circle-fill"></i> Verified</span></div>
-      <div class="stat-inline"><span class="si-label">Output</span><span class="si-val mono" style="font-size:.78rem">${escapeHtml(Store.settings().outputFolder)}</span></div>`;
-    UI.successModal({ title: 'Extraction complete!', subtitle: 'Files restored successfully.', bodyNode: res, actions: [{ label: 'Great', class: 'btn-accent' }] });
-    UI.toast({ type: 'success', title: 'Extracted', message: archive.name });
+      <div class="stat-inline"><span class="si-label">Archives extracted</span><span class="si-val">${count}</span></div>
+      <div class="stat-inline"><span class="si-label">Destination folder</span><span class="si-val mono" style="font-size:.78rem">${escapeHtml(dest)}</span></div>
+      <div class="stat-inline"><span class="si-label">Files restored</span><span class="si-val">${restoredFiles}</span></div>
+      <div class="stat-inline"><span class="si-label">Total extracted size</span><span class="si-val text-accent">${formatBytes(restoredBytes)}</span></div>
+      <div class="stat-inline"><span class="si-label">Extraction time</span><span class="si-val">${timeMs} ms</span></div>`;
+    UI.successModal({
+      title: 'Extraction complete!', subtitle: 'Files restored successfully.',
+      bodyNode: res,
+      actions: [
+        { label: 'Open Folder', class: 'btn-ghost', icon: 'bi-folder2-open', onClick: () => { UI.toast({ type: 'info', title: 'Extracted folder', message: dest }); return false; } },
+        { label: 'Extract Another', class: 'btn-ghost', icon: 'bi-plus-lg', onClick: () => { navigate('extract'); } },
+        { label: 'Close', class: 'btn-accent', icon: 'bi-check-lg' },
+      ],
+    });
+    UI.toast({ type: 'success', title: 'Extracted', message: `${count} archive(s)` });
+    setTimeout(() => { if (currentView === 'extract') navigate('extract'); }, 400);
   }
 
   function bindHistory() {
