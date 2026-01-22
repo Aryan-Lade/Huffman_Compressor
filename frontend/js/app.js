@@ -17,7 +17,7 @@ const App = (() => {
 
   const titles = {
     dashboard: 'Dashboard', compress: 'Compress', extract: 'Extract',
-    history: 'History', reports: 'Reports', settings: 'Settings', about: 'About',
+    history: 'History', analytics: 'Analytics', reports: 'Reports', settings: 'Settings', about: 'About',
   };
 
   function init() {
@@ -117,6 +117,7 @@ const App = (() => {
     if (view === 'compress') bindCompress();
     if (view === 'extract') bindExtract();
     if (view === 'history') bindHistory();
+    if (view === 'analytics') bindAnalytics();
     if (view === 'reports') bindReports();
     if (view === 'settings') bindSettings();
     bindArchiveActions();
