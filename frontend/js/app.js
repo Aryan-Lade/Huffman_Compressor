@@ -129,6 +129,97 @@ const App = (() => {
 
   function bindDashboard() {}
 
+  function bindAnalytics() {
+    animateCounters();
+    setTimeout(() => $$('.progress .bar[data-fill]').forEach((b) => { b.style.width = b.dataset.fill + '%'; }), 80);
+
+    const A = window.HZAnalytics || (window.HZAnalytics = { range: 'all', type: 'all', level: 'all', sortKey: 'saved', sortDir: 'desc', search: '' });
+    const rerender = () => navigate('analytics');
+
+    $$('#rangeSeg button').forEach((b) => b.addEventListener('click', () => { A.range = b.dataset.range; rerender(); }));
+    const tf = $('#typeFilter'); if (tf) tf.addEventListener('change', () => { A.type = tf.value; rerender(); });
+    const lf = $('#levelFilter'); if (lf) lf.addEventListener('change', () => { A.level = lf.value; rerender(); });
+
+    $$('#typeStatTable th.sortable').forEach((th) => th.addEventListener('click', () => {
+      const k = th.dataset.sort;
+      if (A.sortKey === k) A.sortDir = A.sortDir === 'asc' ? 'desc' : 'asc';
+      else { A.sortKey = k; A.sortDir = 'desc'; }
+      rerender();
+    }));
+
+    const search = $('#typeStatSearch');
+    if (search) {
+      search.addEventListener('input', debounce(() => { A.search = search.value; rerender(); const s = $('#typeStatSearch'); if (s) { s.focus(); s.setSelectionRange(s.value.length, s.value.length); } }, 250));
+    }
+
+    const txt = $('#exportTxt'); if (txt) txt.addEventListener('click', exportAnalyticsTxt);
+    const csv = $('#exportCsv'); if (csv) csv.addEventListener('click', exportAnalyticsCsv);
+  }
+
+  function animateCounters() {
+    $$('[data-count]').forEach((el) => {
+      const target = Number(el.dataset.count) || 0;
+      const bytes = el.dataset.bytes === '1';
+      const suffix = el.dataset.suffix || '';
+      const dur = 900;
+      const t0 = performance.now();
+      const step = (now) => {
+        const p = Math.min(1, (now - t0) / dur);
+        const eased = 1 - Math.pow(1 - p, 3);
+        const val = Math.round(target * eased);
+        el.textContent = bytes ? formatBytes(val) : val.toLocaleString() + suffix;
+        if (p < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+
+  function analyticsRows() {
+    const s = Store.get();
+    return s.archives.map((a) => ({
+      name: a.name, ext: a.ext, level: a.level || 'balanced',
+      original: a.originalSize, compressed: a.compressedSize,
+      ratio: Math.round(a.ratio * 100), timeMs: a.timeMs || 0,
+      status: a.status || 'success', date: formatDate(a.createdAt),
+    }));
+  }
+
+  function exportAnalyticsCsv() {
+    const rows = analyticsRows();
+    const head = ['Name', 'Type', 'Level', 'OriginalBytes', 'CompressedBytes', 'RatioPct', 'TimeMs', 'Status', 'Date'];
+    const body = rows.map((r) => [r.name, r.ext, r.level, r.original, r.compressed, r.ratio, r.timeMs, r.status, r.date]
+      .map((c) => `"${String(c).replace(/"/g, '""')}"`).join(','));
+    download('huffzip-analytics.csv', [head.join(','), ...body].join('\n'), 'text/csv');
+    UI.toast({ type: 'success', title: 'Analytics exported as CSV' });
+  }
+
+  function exportAnalyticsTxt() {
+    const s = Store.get();
+    const rows = analyticsRows();
+    const totalOrig = s.archives.reduce((n, a) => n + a.originalSize, 0);
+    const totalComp = s.archives.reduce((n, a) => n + a.compressedSize, 0);
+    const saved = totalOrig - totalComp;
+    const avg = totalOrig ? Math.round((saved / totalOrig) * 100) : 0;
+    const lines = [
+      'HUFFZIP — ANALYTICS SUMMARY',
+      '===========================',
+      `Generated: ${formatDate(Date.now())} ${formatTime(Date.now())}`,
+      '',
+      `Total files compressed : ${s.archives.length}`,
+      `Total files extracted  : ${s.extractions.length}`,
+      `Total original size    : ${formatBytes(totalOrig)}`,
+      `Total compressed size  : ${formatBytes(totalComp)}`,
+      `Total storage saved    : ${formatBytes(saved)}`,
+      `Average ratio          : ${avg}%`,
+      '',
+      'ARCHIVES',
+      '--------',
+      ...rows.map((r) => `${r.name}  |  ${formatBytes(r.original)} -> ${formatBytes(r.compressed)}  |  ${r.ratio}%  |  ${r.status}  |  ${r.date}`),
+    ];
+    download('huffzip-analytics.txt', lines.join('\n'));
+    UI.toast({ type: 'success', title: 'Analytics exported as TXT' });
+  }
+
   function bindArchiveActions() {
     $$('[data-action]').forEach((btn) => {
       btn.addEventListener('click', (e) => {

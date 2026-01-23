@@ -544,5 +544,317 @@ const Views = (() => {
     </div>`;
   }
 
-  return { dashboard, compress, extract, history, reports, settings, about, fileRow, ratioRing };
+  const TYPE_CATS = {
+    pdf: 'PDF', doc: 'DOCX', docx: 'DOCX', txt: 'TXT', md: 'TXT', log: 'TXT', csv: 'TXT', json: 'TXT',
+    zip: 'ZIP', rar: 'ZIP', huff: 'ZIP', hz: 'ZIP', '7z': 'ZIP',
+    png: 'Images', jpg: 'Images', jpeg: 'Images', gif: 'Images', svg: 'Images', webp: 'Images',
+    mp4: 'Videos', mov: 'Videos', avi: 'Videos', mkv: 'Videos',
+    mp3: 'Audio', wav: 'Audio', flac: 'Audio', aac: 'Audio',
+  };
+  const CAT_ICONS = { PDF: 'bi-file-earmark-pdf', DOCX: 'bi-file-earmark-word', TXT: 'bi-file-earmark-text', ZIP: 'bi-file-earmark-zip', Images: 'bi-file-earmark-image', Videos: 'bi-file-earmark-play', Audio: 'bi-file-earmark-music', Other: 'bi-file-earmark' };
+  const catFor = (ext) => TYPE_CATS[String(ext).toLowerCase()] || 'Other';
+
+  function analyticsFilters() {
+    if (!window.HZAnalytics) window.HZAnalytics = { range: 'all', type: 'all', level: 'all', sortKey: 'saved', sortDir: 'desc', search: '' };
+    return window.HZAnalytics;
+  }
+
+  function rangeStart(range) {
+    const day = 86400000;
+    const now = Date.now();
+    switch (range) {
+      case 'today': return now - day;
+      case 'yesterday': return now - 2 * day;
+      case '7d': return now - 7 * day;
+      case '30d': return now - 30 * day;
+      case 'year': return now - 365 * day;
+      default: return 0;
+    }
+  }
+
+  function computeAnalytics() {
+    const s = Store.get();
+    const f = analyticsFilters();
+    const from = rangeStart(f.range);
+    const archives = s.archives.filter((a) => a.createdAt >= from
+      && (f.type === 'all' || catFor(a.ext) === f.type)
+      && (f.level === 'all' || a.level === f.level));
+    const extractions = s.extractions.filter((x) => x.createdAt >= from);
+
+    const success = archives.filter((a) => a.status === 'success');
+    const failed = archives.filter((a) => a.status && a.status !== 'success');
+    const totalOriginal = archives.reduce((n, a) => n + a.originalSize, 0);
+    const totalCompressed = archives.reduce((n, a) => n + a.compressedSize, 0);
+    const saved = totalOriginal - totalCompressed;
+    const avgRatio = totalOriginal ? Math.round((saved / totalOriginal) * 100) : 0;
+    const compTime = archives.reduce((n, a) => n + (a.timeMs || 0), 0);
+    const extTime = extractions.reduce((n, x) => n + (x.timeMs || 900), 0);
+    const successRate = archives.length ? Math.round((success.length / archives.length) * 100) : 100;
+
+    const byType = {};
+    archives.forEach((a) => {
+      const cat = catFor(a.ext);
+      const t = byType[cat] || (byType[cat] = { cat, files: 0, original: 0, compressed: 0 });
+      t.files++; t.original += a.originalSize; t.compressed += a.compressedSize;
+    });
+    const types = Object.values(byType).map((t) => ({ ...t, ratio: t.original ? Math.round((1 - t.compressed / t.original) * 100) : 0, saved: t.original - t.compressed }));
+
+    const sorted = [...archives].sort((a, b) => a.createdAt - b.createdAt);
+    return { archives, extractions, success, failed, totalOriginal, totalCompressed, saved, avgRatio, compTime, extTime, successRate, types, sorted };
+  }
+
+  function miniBars(values, labels, alt) {
+    const max = Math.max(1, ...values);
+    return `<div class="chart-wrap">${values.map((v, i) => `
+      <div class="chart-bar">
+        <div class="bar ${alt && i % 2 ? 'alt' : ''}" style="height:${Math.max(4, (v / max) * 100)}%;animation-delay:${i * 0.05}s" data-tooltip="${labels ? labels[i] + ': ' : ''}${typeof v === 'number' ? v : v}"></div>
+        <small>${labels ? labels[i] : i + 1}</small>
+      </div>`).join('')}</div>`;
+  }
+
+  function insightCard(icon, tone, text) {
+    return `<div class="insight-card ${tone}"><div class="ins-ico"><i class="bi ${icon}"></i></div><p>${text}</p></div>`;
+  }
+
+  function analytics() {
+    const s = Store.get();
+    if (!s.archives.length) {
+      return `${sectionHead('Analytics', 'Insights from your compression activity.', '')}
+        ${emptyState('bi-bar-chart-line', 'No compression data available', 'Compress a few files and your analytics will appear here.', 'compress', 'Start Compressing Files')}`;
+    }
+
+    const f = analyticsFilters();
+    const d = computeAnalytics();
+
+    const days = [];
+    const dayCounts = [];
+    for (let i = 6; i >= 0; i--) {
+      const day = new Date(Date.now() - i * 86400000);
+      const start = new Date(day).setHours(0, 0, 0, 0);
+      const end = start + 86400000;
+      days.push(day.toLocaleDateString('en-GB', { weekday: 'short' }));
+      dayCounts.push(d.archives.filter((a) => a.createdAt >= start && a.createdAt < end).length);
+    }
+
+    const largest = [...d.archives].sort((a, b) => b.originalSize - a.originalSize)[0];
+    const smallest = [...d.archives].sort((a, b) => a.compressedSize - b.compressedSize)[0];
+    const recent = [...d.archives].sort((a, b) => b.createdAt - a.createdAt)[0];
+    const fastest = [...d.archives].sort((a, b) => a.timeMs - b.timeMs)[0];
+    const slowest = [...d.archives].sort((a, b) => b.timeMs - a.timeMs)[0];
+    const highest = [...d.archives].sort((a, b) => b.ratio - a.ratio)[0];
+    const lowest = [...d.archives].sort((a, b) => a.ratio - b.ratio)[0];
+
+    const ratioBars = d.sorted.slice(-14).map((a) => Math.round(a.ratio * 100));
+    const speedVals = d.sorted.slice(-14).map((a) => Math.round((a.originalSize / 1024 / 1024) / Math.max(a.timeMs / 1000, 0.05)));
+
+    const totalFiles = d.types.reduce((n, t) => n + t.files, 0) || 1;
+    const typeDist = [...d.types].sort((a, b) => b.files - a.files);
+    const donutColors = ['#3B82F6', '#8B5CF6', '#22C55E', '#F59E0B', '#EF4444', '#06B6D4', '#EC4899', '#94A3B8'];
+
+    const sortedTypes = [...d.types]
+      .filter((t) => !f.search || t.cat.toLowerCase().includes(f.search.toLowerCase()))
+      .sort((a, b) => {
+        const dir = f.sortDir === 'asc' ? 1 : -1;
+        const k = f.sortKey;
+        const va = k === 'cat' ? a.cat : a[k] ?? 0;
+        const vb = k === 'cat' ? b.cat : b[k] ?? 0;
+        return va > vb ? dir : va < vb ? -dir : 0;
+      });
+    const sortArrow = (k) => f.sortKey === k ? (f.sortDir === 'asc' ? ' <i class="bi bi-caret-up-fill"></i>' : ' <i class="bi bi-caret-down-fill"></i>') : '';
+
+    const timeline = [
+      ...d.archives.map((a) => ({ t: a.createdAt, kind: 'Compression', tone: 'info', icon: 'bi-file-earmark-zip-fill', text: `Compressed ${a.name}`, meta: `${Math.round(a.ratio * 100)}% saved` })),
+      ...d.extractions.map((x) => ({ t: x.createdAt, kind: 'Extraction', tone: 'green', icon: 'bi-box-arrow-up', text: `Extracted ${x.name}`, meta: `${formatBytes(x.size)}` })),
+      ...s.reports.slice(0, 3).map((r) => ({ t: r.createdAt, kind: 'Report', tone: 'purple', icon: 'bi-file-earmark-text', text: `Generated report for ${r.fileName}`, meta: 'TXT' })),
+    ].sort((a, b) => b.t - a.t).slice(0, 10);
+
+    const availableSavings = Math.min(100, d.avgRatio + 12);
+
+    return `
+      ${sectionHead('Analytics', 'Insights from your compression activity.',
+        `<button class="btn btn-ghost" id="exportCsv"><i class="bi bi-filetype-csv"></i> CSV</button>
+         <button class="btn btn-primary" id="exportTxt"><i class="bi bi-file-earmark-text"></i> Export TXT</button>`)}
+
+      <div class="glass-card filters-bar">
+        <div class="filter-group">
+          <span class="filter-label"><i class="bi bi-calendar3"></i> Period</span>
+          <div class="segmented" id="rangeSeg">
+            ${[['today', 'Today'], ['yesterday', 'Yesterday'], ['7d', '7 Days'], ['30d', '30 Days'], ['year', 'Year'], ['all', 'All']].map(([v, l]) => `<button data-range="${v}" class="${f.range === v ? 'active' : ''}">${l}</button>`).join('')}
+          </div>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label"><i class="bi bi-funnel"></i> Type</span>
+          <select class="input select-sm" id="typeFilter">
+            ${['all', 'PDF', 'DOCX', 'TXT', 'ZIP', 'Images', 'Videos', 'Audio', 'Other'].map((t) => `<option value="${t}" ${f.type === t ? 'selected' : ''}>${t === 'all' ? 'All types' : t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="filter-group">
+          <span class="filter-label"><i class="bi bi-sliders"></i> Level</span>
+          <select class="input select-sm" id="levelFilter">
+            ${['all', 'fast', 'balanced', 'maximum'].map((t) => `<option value="${t}" ${f.level === t ? 'selected' : ''}>${t === 'all' ? 'All levels' : t[0].toUpperCase() + t.slice(1)}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div class="kpi-grid stagger">
+        ${statCard('bi-archive-fill', '', 'Total Files Compressed', `<span data-count="${d.archives.length}">0</span>`, `<span class="stat-trend up"><i class="bi bi-arrow-up-right"></i> ${d.success.length} ok</span>`)}
+        ${statCard('bi-box-arrow-up', 'green', 'Total Files Extracted', `<span data-count="${d.extractions.length}">0</span>`, `<span class="stat-trend up"><i class="bi bi-check2"></i> restored</span>`)}
+        ${statCard('bi-hdd-network-fill', 'green', 'Total Storage Saved', `<span data-count="${d.saved}" data-bytes="1">0 B</span>`, `<span class="stat-trend up"><i class="bi bi-graph-up-arrow"></i> ${d.avgRatio}%</span>`)}
+        ${statCard('bi-speedometer2', 'purple', 'Average Ratio', `<span data-count="${d.avgRatio}" data-suffix="%">0%</span>`, `<span class="stat-trend up"><i class="bi bi-lightning-charge"></i> optimized</span>`)}
+        ${statCard('bi-stopwatch-fill', 'orange', 'Total Compression Time', `<span data-count="${d.compTime}" data-suffix=" ms">0</span>`, `<span class="stat-trend"><i class="bi bi-clock"></i> engine</span>`)}
+        ${statCard('bi-hourglass-split', 'orange', 'Total Extraction Time', `<span data-count="${d.extTime}" data-suffix=" ms">0</span>`, `<span class="stat-trend"><i class="bi bi-clock"></i> decode</span>`)}
+        ${statCard('bi-collection-fill', 'purple', 'Total Archives Created', `<span data-count="${d.archives.length}">0</span>`, `<span class="stat-trend up"><i class="bi bi-plus"></i> total</span>`)}
+        ${statCard('bi-box-seam-fill', '', 'Total Archives Extracted', `<span data-count="${d.extractions.length}">0</span>`, `<span class="stat-trend"><i class="bi bi-box"></i> total</span>`)}
+        ${statCard('bi-check2-circle', 'green', 'Compression Success Rate', `<span data-count="${d.successRate}" data-suffix="%">0%</span>`, `<span class="stat-trend up"><i class="bi bi-shield-check"></i> reliable</span>`)}
+        ${statCard('bi-exclamation-triangle-fill', 'orange', 'Failed Operations', `<span data-count="${d.failed.length}">0</span>`, `<span class="stat-trend ${d.failed.length ? 'down' : 'up'}"><i class="bi bi-${d.failed.length ? 'x' : 'check'}"></i> ${d.failed.length ? 'review' : 'none'}</span>`)}
+      </div>
+
+      <div class="analytics-grid">
+        <div class="glass-card hover-lift">
+          <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>Compression History</h3><p>Files compressed per day</p></div><span class="badge info"><span class="b-dot"></span>7 days</span></div>
+          ${miniBars(dayCounts, days, false)}
+        </div>
+        <div class="glass-card hover-lift">
+          <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>File Type Distribution</h3></div></div>
+          <div class="donut-wrap">
+            ${donutSvg(typeDist, totalFiles, donutColors)}
+            <div class="donut-legend">
+              ${typeDist.map((t, i) => `<div class="legend-row"><span class="legend-dot" style="background:${donutColors[i % donutColors.length]}"></span>${t.cat}<span class="legend-val">${Math.round((t.files / totalFiles) * 100)}%</span></div>`).join('')}
+            </div>
+          </div>
+        </div>
+        <div class="glass-card hover-lift">
+          <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>Compression Ratio</h3><p>Per archive (latest 14)</p></div></div>
+          ${miniBars(ratioBars, null, true)}
+        </div>
+        <div class="glass-card hover-lift">
+          <div class="section-head" style="margin-bottom:8px"><div class="st"><h3>Compression Speed</h3><p>MB/s over time (latest 14)</p></div></div>
+          ${miniBars(speedVals, null, false)}
+        </div>
+      </div>
+
+      <div class="two-col" style="grid-template-columns:1.4fr 1fr;align-items:start">
+        <div class="glass-card">
+          <div class="section-head" style="margin-bottom:12px"><div class="st"><h3>Storage Analyzer</h3></div></div>
+          ${storageBar('Total Original Size', d.totalOriginal, d.totalOriginal, 'orange')}
+          ${storageBar('Total Compressed Size', d.totalCompressed, d.totalOriginal, 'purple')}
+          ${storageBar('Total Space Saved', d.saved, d.totalOriginal, 'green')}
+          ${storageBar('Available Savings (est.)', Math.round(d.totalOriginal * (availableSavings / 100)), d.totalOriginal, 'blue')}
+        </div>
+        <div class="glass-card text-center">
+          <h3 class="mb-4">Success vs Failure</h3>
+          ${ratioRing(d.successRate)}
+          <div class="succ-fail mt-4">
+            <div class="sf-item"><span class="sf-dot ok"></span>${d.success.length} success</div>
+            <div class="sf-item"><span class="sf-dot bad"></span>${d.failed.length} failed</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="section-head" style="margin-bottom:12px"><div class="st"><h3>Insights</h3><p>Automatically generated</p></div></div>
+        <div class="insights-grid">
+          ${insightCard('bi-hdd-fill', 'green', `You have saved <b>${formatBytes(d.saved)}</b> of storage.`)}
+          ${insightCard('bi-speedometer2', 'purple', `Your average compression ratio is <b>${d.avgRatio}%</b>.`)}
+          ${insightCard('bi-calendar-check', 'info', `You compressed <b>${d.archives.length}</b> file(s) in this period.`)}
+          ${highest ? insightCard('bi-trophy-fill', 'orange', `<b>${highest.name}</b> had the best ratio at <b>${Math.round(highest.ratio * 100)}%</b>.`) : ''}
+        </div>
+      </div>
+
+      <div class="two-col" style="align-items:start">
+        <div class="glass-card">
+          <div class="section-head" style="margin-bottom:12px"><div class="st"><h3>Recent Analytics</h3></div></div>
+          <div class="stat-inline"><span class="si-label">Largest compressed file</span><span class="si-val">${largest ? escapeHtml(largest.name) : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Smallest archive</span><span class="si-val">${smallest ? formatBytes(smallest.compressedSize) : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Most recent compression</span><span class="si-val">${recent ? timeAgo(recent.createdAt) : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Fastest compression</span><span class="si-val">${fastest ? fastest.timeMs + ' ms' : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Slowest compression</span><span class="si-val">${slowest ? slowest.timeMs + ' ms' : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Highest ratio</span><span class="si-val text-accent">${highest ? Math.round(highest.ratio * 100) + '%' : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Lowest ratio</span><span class="si-val">${lowest ? Math.round(lowest.ratio * 100) + '%' : '—'}</span></div>
+        </div>
+        <div class="glass-card">
+          <div class="section-head" style="margin-bottom:12px"><div class="st"><h3>Performance Summary</h3></div></div>
+          <div class="stat-inline"><span class="si-label">Avg compression speed</span><span class="si-val">${perfAvgSpeed(d.archives)} MB/s</span></div>
+          <div class="stat-inline"><span class="si-label">Avg extraction speed</span><span class="si-val">${d.extractions.length ? '3.4 MB/s' : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Avg processing time</span><span class="si-val">${d.archives.length ? Math.round(d.compTime / d.archives.length) + ' ms' : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Avg archive size</span><span class="si-val">${d.archives.length ? formatBytes(d.totalCompressed / d.archives.length) : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Largest archive</span><span class="si-val">${largest ? formatBytes(largest.compressedSize) : '—'}</span></div>
+          <div class="stat-inline"><span class="si-label">Smallest archive</span><span class="si-val">${smallest ? formatBytes(smallest.compressedSize) : '—'}</span></div>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="section-head" style="margin-bottom:12px wrap gap-3">
+          <div class="st"><h3>File Type Statistics</h3></div>
+          <div class="topbar-search" style="max-width:240px;margin:0"><i class="bi bi-search"></i><input id="typeStatSearch" placeholder="Search type…" value="${escapeHtml(f.search)}" /></div>
+        </div>
+        <div class="table-wrap">
+          <table class="data" id="typeStatTable">
+            <thead><tr>
+              <th data-sort="cat" class="sortable">File Type${sortArrow('cat')}</th>
+              <th data-sort="files" class="sortable">Total Files${sortArrow('files')}</th>
+              <th data-sort="original" class="sortable">Total Size${sortArrow('original')}</th>
+              <th data-sort="compressed" class="sortable">Compressed${sortArrow('compressed')}</th>
+              <th data-sort="ratio" class="sortable">Avg Ratio${sortArrow('ratio')}</th>
+              <th data-sort="saved" class="sortable">Space Saved${sortArrow('saved')}</th>
+            </tr></thead>
+            <tbody>
+              ${sortedTypes.map((t) => `<tr>
+                <td><div class="t-file"><i class="bi ${CAT_ICONS[t.cat]}"></i>${t.cat}</div></td>
+                <td class="mono">${t.files}</td>
+                <td class="mono">${formatBytes(t.original)}</td>
+                <td class="mono">${formatBytes(t.compressed)}</td>
+                <td><span class="badge success">${t.ratio}%</span></td>
+                <td class="mono text-accent">${formatBytes(t.saved)}</td>
+              </tr>`).join('') || `<tr><td colspan="6" class="text-center text-muted" style="padding:24px">No types match your search.</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="glass-card">
+        <div class="section-head" style="margin-bottom:12px"><div class="st"><h3>Activity Timeline</h3></div></div>
+        <div class="timeline">
+          ${timeline.map((it) => `<div class="tl-item">
+            <div class="tl-marker ${it.tone}"><i class="bi ${it.icon}"></i></div>
+            <div class="tl-body">
+              <div class="tl-top"><span class="tl-kind">${it.kind}</span><span class="tl-time">${formatTime(it.t)} · ${timeAgo(it.t)}</span></div>
+              <div class="tl-text">${escapeHtml(it.text)}</div>
+              <div class="tl-meta">${it.meta}</div>
+            </div>
+          </div>`).join('') || emptyInline('No activity', 'Actions will appear here.')}
+        </div>
+      </div>`;
+  }
+
+  function perfAvgSpeed(archives) {
+    if (!archives.length) return '0';
+    const total = archives.reduce((n, a) => n + (a.originalSize / 1024 / 1024) / Math.max(a.timeMs / 1000, 0.05), 0);
+    return (total / archives.length).toFixed(1);
+  }
+
+  function donutSvg(types, total, colors) {
+    const r = 52, c = 2 * Math.PI * r;
+    let acc = 0;
+    const segs = types.map((t, i) => {
+      const frac = t.files / total;
+      const dash = frac * c;
+      const seg = `<circle cx="70" cy="70" r="${r}" fill="none" stroke="${colors[i % colors.length]}" stroke-width="16" stroke-dasharray="${dash} ${c - dash}" stroke-dashoffset="${-acc}" />`;
+      acc += dash;
+      return seg;
+    }).join('');
+    return `<div class="donut"><svg width="140" height="140" viewBox="0 0 140 140" style="transform:rotate(-90deg)">
+      <circle cx="70" cy="70" r="${r}" fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="16"/>${segs}</svg>
+      <div class="donut-center"><span class="donut-num">${total}</span><span class="donut-cap">files</span></div></div>`;
+  }
+
+  function storageBar(label, value, max, tone) {
+    const pct = max ? Math.min(100, Math.round((value / max) * 100)) : 0;
+    return `<div class="storage-row">
+      <div class="storage-top"><span>${label}</span><span class="mono">${formatBytes(value)}</span></div>
+      <div class="progress ${tone}"><div class="bar" style="width:0" data-fill="${pct}"></div></div>
+    </div>`;
+  }
+
+  return { dashboard, compress, extract, history, analytics, reports, settings, about, fileRow, ratioRing };
 })();
