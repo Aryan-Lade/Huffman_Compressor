@@ -1,14 +1,158 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>HuffZip — Smart File Compression Utility</title>
-  <link rel="canonical" href="./frontend/index.html" />
-  <meta http-equiv="refresh" content="0; url=./frontend/index.html" />
-  <script>window.location.replace('./frontend/index.html');</script>
+  <meta name="description" content="HuffZip - A premium smart file compression utility powered by Huffman coding." />
+  <title>HuffZip — Smart File Compression</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+  <!-- Bootstrap Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" />
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/variables.css" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/buttons.css" />
+  <link rel="stylesheet" href="css/cards.css" />
+  <link rel="stylesheet" href="css/animations.css" />
+  <link rel="stylesheet" href="css/utilities.css" />
+  <link rel="stylesheet" href="css/compression.css" />
+  <link rel="stylesheet" href="css/extraction.css" />
+  <link rel="stylesheet" href="css/analytics.css" />
+  <link rel="stylesheet" href="css/responsive.css" />
+  <link rel="stylesheet" href="css/themes.css" />
 </head>
 <body>
-  <p>Redirecting to <a href="./frontend/index.html">HuffZip</a>…</p>
+  <!-- Global drop overlay -->
+  <div class="global-drop-overlay" id="globalDropOverlay">
+    <div class="global-drop-inner">
+      <i class="bi bi-cloud-arrow-down-fill"></i>
+      <h2>Drop files anywhere</h2>
+      <p>Release to add them to HuffZip</p>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- App shell -->
+  <div class="app-shell">
+    <!-- ============ SIDEBAR ============ -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo">
+          <i class="bi bi-file-zip-fill"></i>
+        </div>
+        <div class="brand-text">
+          <span class="brand-name">HuffZip</span>
+          <span class="brand-tag">Smart Compression</span>
+        </div>
+        <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">
+          <i class="bi bi-x-lg"></i>
+        </button>
+      </div>
+
+      <nav class="sidebar-nav">
+        <span class="nav-label">Menu</span>
+        <a class="nav-item active" data-view="dashboard"><i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span></a>
+        <a class="nav-item" data-view="compress"><i class="bi bi-file-earmark-zip-fill"></i><span>Compress</span></a>
+        <a class="nav-item" data-view="extract"><i class="bi bi-box-arrow-up"></i><span>Extract</span></a>
+        <a class="nav-item" data-view="history"><i class="bi bi-clock-history"></i><span>History</span></a>
+        <a class="nav-item" data-view="analytics"><i class="bi bi-bar-chart-line-fill"></i><span>Analytics</span></a>
+        <a class="nav-item" data-view="reports"><i class="bi bi-file-earmark-bar-graph-fill"></i><span>Reports</span></a>
+
+        <span class="nav-label">System</span>
+        <a class="nav-item" data-view="settings"><i class="bi bi-gear-fill"></i><span>Settings</span></a>
+        <a class="nav-item" data-view="about"><i class="bi bi-info-circle-fill"></i><span>About</span></a>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="storage-card">
+          <div class="storage-head">
+            <i class="bi bi-hdd-fill"></i>
+            <span>Space Saved</span>
+          </div>
+          <div class="storage-value" id="sidebarSpaceSaved">0 MB</div>
+          <div class="storage-bar"><span id="sidebarStorageBar" style="width:0%"></span></div>
+          <small>Across all archives</small>
+        </div>
+      </div>
+    </aside>
+
+    <div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+    <!-- ============ MAIN ============ -->
+    <div class="main-wrap">
+      <!-- Top navigation -->
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn hamburger" id="hamburger" aria-label="Open menu">
+            <i class="bi bi-list"></i>
+          </button>
+          <nav class="breadcrumb" id="breadcrumb">
+            <span>HuffZip</span>
+            <i class="bi bi-chevron-right"></i>
+            <span class="crumb-current" id="crumbCurrent">Dashboard</span>
+          </nav>
+        </div>
+
+        <div class="topbar-search">
+          <i class="bi bi-search"></i>
+          <input type="text" id="globalSearch" placeholder="Search files, archives, reports…  ( / )" />
+          <kbd>/</kbd>
+        </div>
+
+        <div class="topbar-right">
+          <button class="icon-btn" id="quickCompressBtn" data-tooltip="Quick Compress">
+            <i class="bi bi-lightning-charge-fill"></i>
+          </button>
+          <button class="icon-btn" id="themeToggle" data-tooltip="Toggle theme">
+            <i class="bi bi-moon-stars-fill"></i>
+          </button>
+          <button class="icon-btn has-dot" id="notifBtn" data-tooltip="Notifications">
+            <i class="bi bi-bell-fill"></i>
+            <span class="dot"></span>
+          </button>
+          <button class="user-chip" id="userChip">
+            <span class="avatar">AL</span>
+            <span class="user-meta">
+              <span class="user-name">Aryan</span>
+              <span class="user-role">Pro user</span>
+            </span>
+          </button>
+        </div>
+      </header>
+
+      <!-- Notification panel -->
+      <div class="notif-panel" id="notifPanel">
+        <div class="notif-head"><span>Notifications</span><button id="clearNotifs">Clear all</button></div>
+        <div class="notif-list" id="notifList"></div>
+      </div>
+
+      <!-- Content -->
+      <main class="content" id="content">
+        <!-- Views are injected here by JS -->
+      </main>
+    </div>
+  </div>
+
+  <!-- Modal root -->
+  <div class="modal-root" id="modalRoot"></div>
+
+  <!-- Scripts -->
+  <script src="js/utils.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/huffman.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/components.js"></script>
+  <script src="js/views.js"></script>
+  <script src="js/app.js"></script>
 </body>
 </html>
